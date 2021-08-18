@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <db:config name="Database_Config" doc:name="Database Config" doc:id="7c6c89e6-7979-42d4-96b3-9da37303765f" >
+        <db:my-sql-connection host="${database.host}" port="${database.port}" user="${database.username}" password="${database.password}" database="${database.name}" />
+    </db:config>
+    <salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="9fa97d53-1f31-4dd4-a89a-091306a46120" >
+        <salesforce:basic-connection username="${sfdc.username}" password="${sfdc.password}" securityToken="${sfdc.token}"/>
+    </salesforce:sfdc-config>
+    <configuration-properties doc:name="Configuration properties" doc:id="8ec7083c-a4b6-4ee7-b64b-6b55ad55287f" file="devtriumph-dev.yaml" />
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="db64f08f-b62f-4161-9111-7cdecd1844a7" >
+        <http:listener-connection host="${http.host}" port="${http.port}" />
+    </http:listener-config>
+    <flow name="mule4-async-scope-demo-flow" doc:id="afc96438-29e3-4115-9fb6-65ac2c313c77" >
+        <http:listener doc:name="Listener" doc:id="fea9a544-86cf-4ba2-a509-b39031f52633" config-ref="HTTP_Listener_config" path="${http.path}"/>
+        <logger level="INFO" doc:name="Main Flow Start" doc:id="ee8ba102-29bb-4533-8ebf-eb538c6cf17c" message='#["Main Flow Started"]'/>
+        <async doc:name="Async" doc:id="4b81c806-e7a9-4e88-8d56-9aa55a826abe" >
+            <logger level="INFO" doc:name="Async Flow Start" doc:id="5a8a92f3-4a54-40fe-9192-61ae47b6e89b" message='#["Async Flow Started"]'/>
+            <db:insert doc:name="Insert Contacts" doc:id="4226905b-5097-46f4-975c-6af7cd9f76c5" config-ref="Database_Config">
+                <db:sql ><![CDATA[INSERT INTO contact (Id, Name, Phone, Email) VALUES (:id, :name, :phone, :email)]]></db:sql>
+                <db:input-parameters ><![CDATA[#[{
+	id: payload.id,
+	name: payload.name,
+	phone: payload.phone,
+	email: payload.email
+}]]]></db:input-parameters>
+            </db:insert>
+            <ee:transform doc:name="Wait 2 minutes" doc:id="1c434d62-60d4-4896-afa4-0b4c936b9a8c" >
+                <ee:message >
+                    <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+import * from dw::Runtime
+---
+payload wait 120000]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+            <logger level="INFO" doc:name="Log Current Time After DB Insert" doc:id="f1afdcf2-d9e1-4dd0-a9aa-14842b7112ae" message='#["DB Insert operation completed on:" ++ now ()  as String {format : "dd-MM-yyyy hh:mm:ss a"}]'/>
+            <logger level="INFO" doc:name="Async Flow End" doc:id="8e402119-0d8d-4464-a7b4-fdf449106626" message='#["Async Flow Ended"]'/>
+        </async>
+        <ee:transform doc:name="Map Payload to SFDC Format" doc:id="fb56310a-c394-4f26-b9f1-b153673db5f4" >
+            <ee:message >
+                <ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+[{
+	Id: payload.id,
+	Name: payload.name,
+	Phone: payload.phone,
+	Email: payload.email
+}]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <salesforce:create doc:name="Create Contact" doc:id="4d86cc4c-265d-4b38-a709-09b557d08575" config-ref="Salesforce_Config" type="Contact"/>
+        <ee:transform doc:name="Set SFDC Response" doc:id="f90e0268-49d7-474a-be89-53840f75a082" >
+            <ee:message >
+                <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message": "New contact has been created"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <logger level="INFO" doc:name="Log Current Time After SFDC Create" doc:id="0a3ecf6d-5dad-4013-9373-595d9917cbf3" message='#["SFDC Create operation completed on :" ++ now ()  as String {format : "dd-MM-yyyy hh:mm:ss a"}]'/>
+        <logger level="INFO" doc:name="Main Flow End" doc:id="3dd98ed3-d480-4ed5-85c5-a4da659797f8" message='#["Main Flow Ended"]'/>
+    </flow>
+</mule>
